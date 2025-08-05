@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gold & Silver Price Tracker - Bangladesh</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        .card { background-color: white; border-radius: 0.75rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); padding: 1.5rem; }
+        .btn { padding: 0.5rem 1rem; border-radius: 0.5rem; font-weight: 500; cursor: pointer; transition: all 0.2s ease-in-out; border: 1px solid transparent; }
+        .btn-active { background-color: #10b981; color: white; }
+        .btn-inactive { background-color: #e5e7eb; color: #374151; }
+        .btn-inactive:hover { background-color: #d1d5db; }
+    </style>
+</head>
+<body class="antialiased text-gray-800">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-4xl">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Gold & Silver Price Tracker</h1>
+            <p class="text-gray-600 mt-2">Live prices from Bangladesh Jewellers Samity (BAJUS)</p>
+        </header>
+
+        <main class="card">
+            <div class="flex flex-col sm:flex-row justify-between items-center gap-4 mb-6">
+                <div id="metal-selector" class="flex gap-2 p-1 bg-gray-200 rounded-lg">
+                    <button id="btn-gold" class="btn">Gold</button>
+                    <button id="btn-silver" class="btn">Silver</button>
+                </div>
+                <div class="text-center">
+                    <p class="text-sm text-gray-500">Latest Price (22K)</p>
+                    <p id="latest-price" class="text-2xl font-bold text-emerald-600">-</p>
+                </div>
+                <div id="unit-selector" class="flex gap-2 p-1 bg-gray-200 rounded-lg">
+                    <button id="btn-vori" class="btn">Per Vori</button>
+                    <button id="btn-gram" class="btn">Per Gram</button>
+                </div>
+            </div>
+
+            <div class="relative h-64 md:h-96">
+                <canvas id="priceChart"></canvas>
+                <div id="loader" class="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75 rounded-lg">
+                    <p class="text-gray-600">Loading Chart...</p>
+                </div>
+            </div>
+        </main>
+
+        <footer class="text-center mt-6 text-sm text-gray-500">
+            <p>Last updated: <span id="last-updated">-</span></p>
+            <p class="mt-1">1 Vori = 11.664 Grams. All data is for 22 Carat gold.</p>
+        </footer>
+    </div>
+
+    <script>
+        // --- CONFIGURATION ---
+        // We will replace this with our live Render API URL later
+        const API_BASE_URL = 'YOUR_RENDER_API_URL_HERE'; 
+
+        let currentMetal = 'gold';
+        let currentUnit = 'vori';
+        let priceChart = null;
+
+        const VORI_TO_GRAM = 11.664;
+
+        const btnGold = document.getElementById('btn-gold');
+        const btnSilver = document.getElementById('btn-silver');
+        const btnVori = document.getElementById('btn-vori');
+        const btnGram = document.getElementById('btn-gram');
+        const latestPriceEl = document.getElementById('latest-price');
+        const lastUpdatedEl = document.getElementById('last-updated');
+        const loader = document.getElementById('loader');
+
+        function setupEventListeners() {
+            btnGold.addEventListener('click', () => switchMetal('gold'));
+            btnSilver.addEventListener('click', () => switchMetal('silver'));
+            btnVori.addEventListener('click', () => switchUnit('vori'));
+            btnGram.addEventListener('click', () => switchUnit('gram'));
+        }
+
+        function updateActiveButtons() {
+            btnGold.className = `btn ${currentMetal === 'gold' ? 'btn-active' : 'btn-inactive'}`;
+            btnSilver.className = `btn ${currentMetal === 'silver' ? 'btn-active' : 'btn-inactive'}`;
+            btnVori.className = `btn ${currentUnit === 'vori' ? 'btn-active' : 'btn-inactive'}`;
+            btnGram.className = `btn ${currentUnit === 'gram' ? 'btn-active' : 'btn-inactive'}`;
+        }
+
+        async function switchMetal(metal) {
+            if (currentMetal === metal) return;
+            currentMetal = metal;
+            updateActiveButtons();
+            await loadChartData();
+        }
+
+        async function switchUnit(unit) {
+            if (currentUnit === unit) return;
+            currentUnit = unit;
+            updateActiveButtons();
+            await loadChartData();
+        }
+
+        async function loadChartData() {
+            loader.style.display = 'flex';
+            loader.querySelector('p').innerText = 'Loading Chart...';
+            
+            if (API_BASE_URL === 'YOUR_RENDER_API_URL_HERE') {
+                loader.querySelector('p').innerText = 'Error: API URL is not configured.';
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/prices/${currentMetal}`);
+                if (!response.ok) {
+                    throw new Error(`API responded with status: ${response.status}`);
+                }
+                const data = await response.json();
+                
+                if (data && data.length > 0) {
+                    renderChart(data);
+                } else {
+                    throw new Error('No price history found in the database.');
+                }
+            } catch (error) {
+                console.error("Error loading chart data:", error);
+                loader.querySelector('p').innerText = `Error: ${error.message}`;
+                if(priceChart) priceChart.destroy();
+            }
+        }
+
+        function renderChart(data) {
+            const ctx = document.getElementById('priceChart').getContext('2d');
+            const sortedData = data.sort((a, b) => new Date(a.date) - new Date(b.date));
+            const labels = sortedData.map(d => d.date);
+            const prices = sortedData.map(d => currentUnit === 'gram' ? d.price_vori / VORI_TO_GRAM : d.price_vori);
+            
+            const latestDataPoint = sortedData[sortedData.length - 1];
+            latestPriceEl.textContent = `৳ ${Math.round(prices[prices.length - 1]).toLocaleString('en-IN')}`;
+            lastUpdatedEl.textContent = new Date(latestDataPoint.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+
+            const chartLabel = `${currentMetal.charAt(0).toUpperCase() + currentMetal.slice(1)} Price (per ${currentUnit})`;
+            const borderColor = currentMetal === 'gold' ? '#f59e0b' : '#6b7280';
+            const backgroundColor = currentMetal === 'gold' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(107, 114, 128, 0.1)';
+
+            if (priceChart) priceChart.destroy();
+            priceChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: chartLabel,
+                        data: prices,
+                        borderColor: borderColor,
+                        backgroundColor: backgroundColor,
+                        fill: true,
+                        tension: 0.1,
+                        pointRadius: 0,
+                        pointHoverRadius: 5,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { type: 'time', time: { unit: 'month', tooltipFormat: 'MMM dd, yyyy' }, grid: { display: false }},
+                        y: { beginAtZero: false, ticks: { callback: (value) => '৳ ' + value.toLocaleString('en-IN') } }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { mode: 'index', intersect: false, callbacks: {
+                            label: (context) => `৳ ${Math.round(context.parsed.y).toLocaleString('en-IN')}`
+                        }}
+                    },
+                    interaction: { mode: 'index', intersect: false }
+                }
+            });
+            loader.style.display = 'none';
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            setupEventListeners();
+            updateActiveButtons();
+            loadChartData();
+        });
+    </script>
+</body>
+</html>
