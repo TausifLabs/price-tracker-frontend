@@ -14,6 +14,9 @@
         .btn { padding: 0.5rem 1rem; border-radius: 0.5rem; font-weight: 600; cursor: pointer; transition: all 0.2s ease-in-out; border: 1px solid transparent; text-align: center; }
         .btn-group button.active { background-color: #ca8a04; color: white; }
         .btn-group button.inactive { background-color: #e5e7eb; color: #374151; }
+        #price-table-body tr { cursor: pointer; transition: background-color 0.2s ease-in-out; }
+        #price-table-body tr:hover { background-color: #f9fafb; }
+        #price-table-body tr.selected { background-color: #fef9c3; font-weight: bold; }
     </style>
 </head>
 <body class="antialiased text-gray-800">
@@ -26,7 +29,7 @@
 
         <main class="card">
             <!-- CONTROLS -->
-            <div class="flex flex-col sm:flex-row justify-between items-center gap-4 mb-8">
+            <div class="flex justify-between items-center gap-4 mb-8">
                 <div id="metal-selector" class="btn-group flex gap-2 p-1 bg-gray-200 rounded-lg">
                     <button data-value="gold" class="btn w-24">Gold</button>
                     <button data-value="silver" class="btn w-24">Silver</button>
@@ -40,24 +43,24 @@
             <!-- PRICE TABLE -->
             <div class="mb-8">
                 <h2 id="table-title" class="text-xl font-bold text-center mb-4">Latest Prices</h2>
-                <table class="w-full text-left">
-                    <thead class="bg-gray-100">
-                        <tr>
-                            <th class="p-3 font-semibold">Carat</th>
-                            <th class="p-3 font-semibold text-right">Price</th>
-                        </tr>
-                    </thead>
-                    <tbody id="price-table-body">
-                        <!-- Rows will be inserted by JS -->
-                    </tbody>
-                </table>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left min-w-[400px]">
+                        <thead class="bg-gray-100">
+                            <tr>
+                                <th class="p-3 font-semibold">Carat (Click to view history)</th>
+                                <th class="p-3 font-semibold text-right">Price</th>
+                            </tr>
+                        </thead>
+                        <tbody id="price-table-body"></tbody>
+                    </table>
+                </div>
             </div>
 
             <!-- GRAPH -->
             <div>
-                <div class="flex justify-between items-center mb-4">
-                    <h2 id="graph-title" class="text-xl font-bold">Price History (22 Karat)</h2>
-                    <select id="days-selector" class="border border-gray-300 rounded-md p-2">
+                <div class="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4">
+                    <h2 id="graph-title" class="text-xl font-bold text-center sm:text-left">Price History</h2>
+                    <select id="days-selector" class="border border-gray-300 rounded-md p-2 w-full sm:w-auto">
                         <option value="180">Last 180 Days</option>
                         <option value="90">Last 90 Days</option>
                         <option value="60">Last 60 Days</option>
@@ -86,6 +89,7 @@
 
         const state = {
             metal: 'gold',
+            carat: '22k',
             unit: 'vori',
             days: 30,
             latestPrices: {},
@@ -94,37 +98,46 @@
 
         let priceChart = null;
 
-        const metalSelector = document.getElementById('metal-selector');
-        const unitSelector = document.getElementById('unit-selector');
-        const daysSelector = document.getElementById('days-selector');
-        const tableBody = document.getElementById('price-table-body');
+        const selectors = {
+            metal: document.getElementById('metal-selector'),
+            unit: document.getElementById('unit-selector'),
+            days: document.getElementById('days-selector'),
+            tableBody: document.getElementById('price-table-body'),
+        };
         const tableTitle = document.getElementById('table-title');
         const graphTitle = document.getElementById('graph-title');
         const loader = document.getElementById('loader');
 
         function setupEventListeners() {
-            metalSelector.addEventListener('click', (e) => {
-                if (e.target.tagName === 'BUTTON' && e.target.dataset.value !== state.metal) {
-                    state.metal = e.target.dataset.value;
-                    fetchDataAndUpdateUI();
-                }
-            });
-            unitSelector.addEventListener('click', (e) => {
-                if (e.target.tagName === 'BUTTON' && e.target.dataset.value !== state.unit) {
-                    state.unit = e.target.dataset.value;
-                    updateUI();
-                }
-            });
-            daysSelector.addEventListener('change', (e) => {
+            selectors.metal.addEventListener('click', (e) => handleSelection(e, 'metal'));
+            selectors.unit.addEventListener('click', (e) => handleSelection(e, 'unit'));
+            selectors.days.addEventListener('change', (e) => {
                 state.days = parseInt(e.target.value);
                 renderChart();
             });
+            selectors.tableBody.addEventListener('click', (e) => {
+                const row = e.target.closest('tr');
+                if (row && row.dataset.carat) {
+                    state.carat = row.dataset.carat;
+                    fetchHistoryAndUpdateGraph();
+                }
+            });
+        }
+
+        function handleSelection(event, key) {
+            if (event.target.tagName === 'BUTTON' && event.target.dataset.value !== state[key]) {
+                state[key] = event.target.dataset.value;
+                if (key === 'unit') {
+                    updateUI();
+                } else {
+                    fetchDataAndUpdateUI();
+                }
+            }
         }
 
         function updateActiveButtons() {
-            document.querySelectorAll('.btn-group').forEach(group => {
-                const key = group.id.split('-')[0]; // 'metal' or 'unit'
-                group.querySelectorAll('button').forEach(btn => {
+            ['metal', 'unit'].forEach(key => {
+                selectors[key].querySelectorAll('button').forEach(btn => {
                     btn.classList.toggle('active', btn.dataset.value === state[key]);
                     btn.classList.toggle('inactive', btn.dataset.value !== state[key]);
                 });
@@ -134,9 +147,10 @@
         async function fetchDataAndUpdateUI() {
             loader.style.display = 'flex';
             try {
+                const metalTypeForHistory = `${state.metal}_${state.carat}`;
                 const [latest, history] = await Promise.all([
                     fetch(`${API_BASE_URL}/api/prices/latest/${state.metal}`).then(res => res.json()),
-                    fetch(`${API_BASE_URL}/api/prices/history/${state.metal}_22k`).then(res => res.json())
+                    fetch(`${API_BASE_URL}/api/prices/history/${metalTypeForHistory}`).then(res => res.json())
                 ]);
                 
                 if (latest.error || history.error) throw new Error('API returned an error.');
@@ -145,9 +159,24 @@
                 state.history = history;
                 
                 updateUI();
-
             } catch (error) {
                 console.error("Fetch error:", error);
+                loader.querySelector('p').innerText = `Error: ${error.message}`;
+            } finally {
+                loader.style.display = 'none';
+            }
+        }
+        
+        async function fetchHistoryAndUpdateGraph() {
+            loader.style.display = 'flex';
+            try {
+                const metalTypeForHistory = `${state.metal}_${state.carat}`;
+                const history = await fetch(`${API_BASE_URL}/api/prices/history/${metalTypeForHistory}`).then(res => res.json());
+                if (history.error) throw new Error('API returned an error.');
+                state.history = history;
+                updateUI(); // Re-render everything with new history
+            } catch (error) {
+                console.error("Fetch history error:", error);
                 loader.querySelector('p').innerText = `Error: ${error.message}`;
             } finally {
                 loader.style.display = 'none';
@@ -161,33 +190,36 @@
         }
 
         function populateTable() {
-            tableBody.innerHTML = '';
+            selectors.tableBody.innerHTML = '';
             const metalName = state.metal.charAt(0).toUpperCase() + state.metal.slice(1);
             tableTitle.textContent = `Latest ${metalName} Prices`;
 
             const carats = [
-                { key: '22k', label: '22 Karat' },
-                { key: '21k', label: '21 Karat' },
-                { key: '18k', label: '18 Karat' },
-                { key: 'trad', label: 'Traditional' }
+                { key: '22k', label: '22 Karat' }, { key: '21k', label: '21 Karat' },
+                { key: '18k', label: '18 Karat' }, { key: 'trad', label: 'Traditional' }
             ];
 
             for (const carat of carats) {
                 const price_per_gram = state.latestPrices[`${state.metal}_${carat.key}`] || 0;
                 const displayPrice = state.unit === 'vori' ? price_per_gram * VORI_CONVERSION_RATE : price_per_gram;
                 
-                const row = `
-                    <tr>
-                        <td class="p-3">${carat.label}</td>
-                        <td class="p-3 text-right font-semibold">৳ ${Math.round(displayPrice).toLocaleString('en-IN')}</td>
-                    </tr>
+                const row = document.createElement('tr');
+                row.dataset.carat = carat.key;
+                row.classList.toggle('selected', state.carat === carat.key);
+                row.innerHTML = `
+                    <td class="p-3">${carat.label}</td>
+                    <td class="p-3 text-right font-semibold">৳ ${Math.round(displayPrice).toLocaleString('en-IN')}</td>
                 `;
-                tableBody.insertAdjacentHTML('beforeend', row);
+                selectors.tableBody.appendChild(row);
             }
         }
 
         function renderChart() {
-            if (!state.history || state.history.length === 0) return;
+            if (!state.history || state.history.length === 0) {
+                if (priceChart) priceChart.destroy();
+                graphTitle.textContent = "No History Available";
+                return;
+            };
 
             const ctx = document.getElementById('priceChart').getContext('2d');
             
@@ -199,9 +231,10 @@
             }).reverse();
 
             const metalName = state.metal.charAt(0).toUpperCase() + state.metal.slice(1);
-            graphTitle.textContent = `${metalName} Price History (22 Karat)`;
+            const caratLabel = state.carat === 'trad' ? 'Traditional' : `${state.carat.toUpperCase()} Karat`;
+            graphTitle.textContent = `${metalName} ${caratLabel} Price History`;
             
-            const chartLabel = `${metalName} 22k (per ${state.unit})`;
+            const chartLabel = `${metalName} ${caratLabel} (per ${state.unit})`;
             const borderColor = state.metal === 'gold' ? '#ca8a04' : '#6b7280';
             const backgroundColor = state.metal === 'gold' ? 'rgba(202, 138, 4, 0.1)' : 'rgba(107, 114, 128, 0.1)';
 
@@ -209,18 +242,7 @@
             
             priceChart = new Chart(ctx, {
                 type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: chartLabel,
-                        data: prices,
-                        borderColor: borderColor,
-                        backgroundColor: backgroundColor,
-                        fill: true,
-                        tension: 0.1,
-                        pointRadius: 0,
-                    }]
-                },
+                data: { labels: labels, datasets: [{ label: chartLabel, data: prices, borderColor: borderColor, backgroundColor: backgroundColor, fill: true, tension: 0.1, pointRadius: 0 }] },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
@@ -230,15 +252,16 @@
                     },
                     plugins: {
                         legend: { display: false },
-                        tooltip: { mode: 'index', intersect: false, callbacks: {
-                            label: (context) => `৳ ${context.parsed.y.toLocaleString('en-IN')}`
-                        }}
+                        tooltip: { mode: 'index', intersect: false, callbacks: { label: (context) => `৳ ${context.parsed.y.toLocaleString('en-IN')}` }}
                     }
                 }
             });
         }
 
-        document.addEventListener('DOMContentLoaded', fetchDataAndUpdateUI);
+        document.addEventListener('DOMContentLoaded', () => {
+            setupEventListeners();
+            fetchDataAndUpdateUI(); // Initial data fetch
+        });
     </script>
 </body>
 </html>
