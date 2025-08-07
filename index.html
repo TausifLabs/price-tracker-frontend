@@ -12,11 +12,12 @@
         body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
         .card { background-color: white; border-radius: 0.75rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); padding: 1.5rem; }
         .btn { padding: 0.5rem 1rem; border-radius: 0.5rem; font-weight: 600; cursor: pointer; transition: all 0.2s ease-in-out; border: 1px solid transparent; text-align: center; }
-        .btn-group button.active { background-color: #ca8a04; color: white; }
         .btn-group button.inactive { background-color: #e5e7eb; color: #374151; }
         #price-table-body tr { cursor: pointer; transition: background-color 0.2s ease-in-out; }
         #price-table-body tr:hover { background-color: #f9fafb; }
-        #price-table-body tr.selected { background-color: #fef9c3; font-weight: bold; }
+        /* Final selected row color for gold */
+        #price-table-body tr.selected-gold { background-color: #BC9F8B; color: white; font-weight: bold; }
+        #price-table-body tr.selected-silver { background-color: #E5E7EB; font-weight: bold; }
     </style>
 </head>
 <body class="antialiased text-gray-800">
@@ -24,19 +25,19 @@
     <div class="container mx-auto p-4 md:p-8 max-w-5xl">
         <header class="text-center mb-8">
             <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Gold & Silver Price Tracker</h1>
-            <p class="text-gray-600 mt-2">Live prices from Bangladesh Jewellers Samity (BAJUS)</p>
+            <p class="text-gray-600 mt-2">Live market prices currently prevailing in Bangladesh</p>
         </header>
 
         <main class="card">
             <!-- CONTROLS -->
             <div class="flex justify-between items-center gap-4 mb-8">
                 <div id="metal-selector" class="btn-group flex gap-2 p-1 bg-gray-200 rounded-lg">
-                    <button data-value="gold" class="btn w-24">Gold</button>
-                    <button data-value="silver" class="btn w-24">Silver</button>
+                    <button data-value="gold" class="btn w-28">Gold</button>
+                    <button data-value="silver" class="btn w-28">Silver</button>
                 </div>
                 <div id="unit-selector" class="btn-group flex gap-2 p-1 bg-gray-200 rounded-lg">
-                    <button data-value="vori" class="btn w-24">Per Vori</button>
-                    <button data-value="gram" class="btn w-24">Per Gram</button>
+                    <button data-value="gram" class="btn w-28">Per Gram</button>
+                    <button data-value="vori" class="btn w-28">Per Vori</button>
                 </div>
             </div>
 
@@ -71,29 +72,32 @@
                 <div class="relative h-64 md:h-80">
                     <canvas id="priceChart"></canvas>
                     <div id="loader" class="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75 rounded-lg">
-                        <p class="text-gray-600">Loading...</p>
+                        <p class="text-gray-600">Loading All Price Data...</p>
                     </div>
                 </div>
             </div>
+            <hr class="w-3/4 mx-auto my-4 border-gray-200">
+            <p class="text-center text-sm text-gray-500">1 Vori = 11.664 Grams</p>
         </main>
 
         <footer class="text-center mt-8 text-sm text-gray-500">
-            <p>1 Vori = 11.663 Grams</p>
-            <p class="mt-2 font-semibold">&copy; 2025 TausifLabs</p>
+            <p class="mt-2 font-semibold">&copy; 2025 TausifLabs. All rights reserved.</p>
         </footer>
     </div>
 
     <script>
         const API_BASE_URL = 'https://prices-api-riqs.onrender.com';
-        const VORI_CONVERSION_RATE = 11.663;
+        const VORI_CONVERSION_RATE = 11.664;
 
         const state = {
             metal: 'gold',
             carat: '22k',
-            unit: 'vori',
+            unit: 'gram',
             days: 30,
-            latestPrices: {},
-            history: []
+            data: {
+                gold: { latest: {}, history: {} },
+                silver: { latest: {}, history: {} }
+            }
         };
 
         let priceChart = null;
@@ -117,9 +121,9 @@
             });
             selectors.tableBody.addEventListener('click', (e) => {
                 const row = e.target.closest('tr');
-                if (row && row.dataset.carat) {
+                if (row && row.dataset.carat && row.dataset.carat !== state.carat) {
                     state.carat = row.dataset.carat;
-                    fetchHistoryAndUpdateGraph();
+                    updateUI();
                 }
             });
         }
@@ -127,57 +131,37 @@
         function handleSelection(event, key) {
             if (event.target.tagName === 'BUTTON' && event.target.dataset.value !== state[key]) {
                 state[key] = event.target.dataset.value;
-                if (key === 'unit') {
-                    updateUI();
-                } else {
-                    fetchDataAndUpdateUI();
-                }
+                updateUI();
             }
         }
 
-        function updateActiveButtons() {
-            ['metal', 'unit'].forEach(key => {
-                selectors[key].querySelectorAll('button').forEach(btn => {
-                    btn.classList.toggle('active', btn.dataset.value === state[key]);
-                    btn.classList.toggle('inactive', btn.dataset.value !== state[key]);
-                });
-            });
-        }
-        
-        async function fetchDataAndUpdateUI() {
+        async function initialLoad() {
             loader.style.display = 'flex';
             try {
-                const metalTypeForHistory = `${state.metal}_${state.carat}`;
-                const [latest, history] = await Promise.all([
-                    fetch(`${API_BASE_URL}/api/prices/latest/${state.metal}`).then(res => res.json()),
-                    fetch(`${API_BASE_URL}/api/prices/history/${metalTypeForHistory}`).then(res => res.json())
-                ]);
-                
-                if (latest.error || history.error) throw new Error('API returned an error.');
+                const metals = ['gold', 'silver'];
+                const carats = ['22k', '21k', '18k', 'trad'];
+                const fetchPromises = [];
 
-                state.latestPrices = latest;
-                state.history = history;
-                
+                for (const metal of metals) {
+                    fetchPromises.push(
+                        fetch(`${API_BASE_URL}/api/prices/latest/${metal}`)
+                            .then(res => res.json())
+                            .then(data => { state.data[metal].latest = data; })
+                    );
+                    for (const carat of carats) {
+                        const metalType = `${metal}_${carat}`;
+                        fetchPromises.push(
+                            fetch(`${API_BASE_URL}/api/prices/history/${metalType}`)
+                                .then(res => res.json())
+                                .then(data => { state.data[metal].history[carat] = data; })
+                        );
+                    }
+                }
+                await Promise.all(fetchPromises);
                 updateUI();
             } catch (error) {
-                console.error("Fetch error:", error);
-                loader.querySelector('p').innerText = `Error: ${error.message}`;
-            } finally {
-                loader.style.display = 'none';
-            }
-        }
-        
-        async function fetchHistoryAndUpdateGraph() {
-            loader.style.display = 'flex';
-            try {
-                const metalTypeForHistory = `${state.metal}_${state.carat}`;
-                const history = await fetch(`${API_BASE_URL}/api/prices/history/${metalTypeForHistory}`).then(res => res.json());
-                if (history.error) throw new Error('API returned an error.');
-                state.history = history;
-                updateUI(); // Re-render everything with new history
-            } catch (error) {
-                console.error("Fetch history error:", error);
-                loader.querySelector('p').innerText = `Error: ${error.message}`;
+                console.error("Initial data load error:", error);
+                loader.querySelector('p').innerText = `Error: Could not load initial data.`;
             } finally {
                 loader.style.display = 'none';
             }
@@ -187,6 +171,31 @@
             updateActiveButtons();
             populateTable();
             renderChart();
+        }
+
+        function updateActiveButtons() {
+            // Final theme colors
+            const theme = {
+                gold: { bg: '#BC9F8B', text: 'white' },
+                silver: { bg: '#4C585B', text: 'white' }
+            };
+            const activeTheme = theme[state.metal];
+
+            [selectors.metal, selectors.unit].forEach(group => {
+                const key = group.id.split('-')[0];
+                group.querySelectorAll('button').forEach(btn => {
+                    const isActive = btn.dataset.value === state[key];
+                    btn.classList.toggle('active', isActive);
+                    btn.classList.toggle('inactive', !isActive);
+                    if (isActive) {
+                        btn.style.backgroundColor = activeTheme.bg;
+                        btn.style.color = activeTheme.text;
+                    } else {
+                        btn.style.backgroundColor = '';
+                        btn.style.color = '';
+                    }
+                });
+            });
         }
 
         function populateTable() {
@@ -199,13 +208,19 @@
                 { key: '18k', label: '18 Karat' }, { key: 'trad', label: 'Traditional' }
             ];
 
+            const latestPricesForMetal = state.data[state.metal].latest;
+
             for (const carat of carats) {
-                const price_per_gram = state.latestPrices[`${state.metal}_${carat.key}`] || 0;
+                const price_per_gram = latestPricesForMetal[`${state.metal}_${carat.key}`] || 0;
                 const displayPrice = state.unit === 'vori' ? price_per_gram * VORI_CONVERSION_RATE : price_per_gram;
                 
                 const row = document.createElement('tr');
                 row.dataset.carat = carat.key;
-                row.classList.toggle('selected', state.carat === carat.key);
+                
+                if (state.carat === carat.key) {
+                    row.className = state.metal === 'gold' ? 'selected-gold' : 'selected-silver';
+                }
+
                 row.innerHTML = `
                     <td class="p-3">${carat.label}</td>
                     <td class="p-3 text-right font-semibold">৳ ${Math.round(displayPrice).toLocaleString('en-IN')}</td>
@@ -215,7 +230,8 @@
         }
 
         function renderChart() {
-            if (!state.history || state.history.length === 0) {
+            const historyData = state.data[state.metal]?.history[state.carat];
+            if (!historyData || historyData.length === 0) {
                 if (priceChart) priceChart.destroy();
                 graphTitle.textContent = "No History Available";
                 return;
@@ -223,7 +239,7 @@
 
             const ctx = document.getElementById('priceChart').getContext('2d');
             
-            const filteredData = state.history.slice(0, state.days);
+            const filteredData = historyData.slice(0, state.days);
             const labels = filteredData.map(d => d.date).reverse();
             const prices = filteredData.map(d => {
                 const displayPrice = state.unit === 'vori' ? d.price_per_gram * VORI_CONVERSION_RATE : d.price_per_gram;
@@ -235,8 +251,8 @@
             graphTitle.textContent = `${metalName} ${caratLabel} Price History`;
             
             const chartLabel = `${metalName} ${caratLabel} (per ${state.unit})`;
-            const borderColor = state.metal === 'gold' ? '#ca8a04' : '#6b7280';
-            const backgroundColor = state.metal === 'gold' ? 'rgba(202, 138, 4, 0.1)' : 'rgba(107, 114, 128, 0.1)';
+            const borderColor = state.metal === 'gold' ? '#BC9F8B' : '#4C585B';
+            const backgroundColor = state.metal === 'gold' ? 'rgba(188, 159, 139, 0.2)' : 'rgba(76, 88, 91, 0.2)';
 
             if (priceChart) priceChart.destroy();
             
@@ -260,7 +276,7 @@
 
         document.addEventListener('DOMContentLoaded', () => {
             setupEventListeners();
-            fetchDataAndUpdateUI(); // Initial data fetch
+            initialLoad();
         });
     </script>
 </body>
