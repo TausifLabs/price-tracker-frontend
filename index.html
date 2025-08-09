@@ -15,7 +15,6 @@
         .btn-group button.inactive { background-color: #e5e7eb; color: #374151; }
         #price-table-body tr { cursor: pointer; transition: background-color 0.2s ease-in-out; }
         #price-table-body tr:hover { background-color: #f9fafb; }
-        /* Final selected row color for gold */
         #price-table-body tr.selected-gold { background-color: #BC9F8B; color: white; font-weight: bold; }
         #price-table-body tr.selected-silver { background-color: #E5E7EB; font-weight: bold; }
     </style>
@@ -30,14 +29,14 @@
 
         <main class="card">
             <!-- CONTROLS -->
-            <div class="flex justify-between items-center gap-4 mb-8">
-                <div id="metal-selector" class="btn-group flex gap-2 p-1 bg-gray-200 rounded-lg">
-                    <button data-value="gold" class="btn w-28">Gold</button>
-                    <button data-value="silver" class="btn w-28">Silver</button>
+            <div class="flex flex-col sm:flex-row justify-between items-center gap-4 mb-8">
+                <div id="metal-selector" class="btn-group flex gap-2 p-1 bg-gray-200 rounded-lg w-full sm:w-auto">
+                    <button data-value="gold" class="btn w-full sm:w-28">Gold</button>
+                    <button data-value="silver" class="btn w-full sm:w-28">Silver</button>
                 </div>
-                <div id="unit-selector" class="btn-group flex gap-2 p-1 bg-gray-200 rounded-lg">
-                    <button data-value="gram" class="btn w-28">Per Gram</button>
-                    <button data-value="vori" class="btn w-28">Per Vori</button>
+                <div id="unit-selector" class="btn-group flex gap-2 p-1 bg-gray-200 rounded-lg w-full sm:w-auto">
+                    <button data-value="gram" class="btn w-full sm:w-28">Per Gram</button>
+                    <button data-value="vori" class="btn w-full sm:w-28">Per Vori</button>
                 </div>
             </div>
 
@@ -45,11 +44,11 @@
             <div class="mb-8">
                 <h2 id="table-title" class="text-xl font-bold text-center mb-4">Latest Prices</h2>
                 <div class="overflow-x-auto">
-                    <table class="w-full text-left min-w-[400px]">
+                    <table class="w-full text-left min-w-[300px]">
                         <thead class="bg-gray-100">
                             <tr>
-                                <th class="p-3 font-semibold">Carat (Click to view history)</th>
-                                <th class="p-3 font-semibold text-right">Price</th>
+                                <th class="py-3 px-2 font-semibold">Carat (Click to view history)</th>
+                                <th class="py-3 px-2 font-semibold text-right">Price</th>
                             </tr>
                         </thead>
                         <tbody id="price-table-body"></tbody>
@@ -72,7 +71,7 @@
                 <div class="relative h-64 md:h-80">
                     <canvas id="priceChart"></canvas>
                     <div id="loader" class="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75 rounded-lg">
-                        <p class="text-gray-600">Loading All Price Data...</p>
+                        <p class="text-gray-600">Loading Price Data...</p>
                     </div>
                 </div>
             </div>
@@ -138,32 +137,58 @@
         async function initialLoad() {
             loader.style.display = 'flex';
             try {
+                // Fetch default data first for a fast load
+                const defaultMetal = 'gold';
+                const defaultCarat = '22k';
+
+                const [latestDefault, historyDefault] = await Promise.all([
+                    fetch(`${API_BASE_URL}/api/prices/latest/${defaultMetal}`).then(res => res.json()),
+                    fetch(`${API_BASE_URL}/api/prices/history/${defaultMetal}_${defaultCarat}`).then(res => res.json())
+                ]);
+
+                state.data.gold.latest = latestDefault;
+                state.data.gold.history['22k'] = historyDefault;
+
+                updateUI(); // Render the initial page immediately
+                loader.style.display = 'none'; // Hide loader
+
+                // Now fetch the rest of the data in the background
+                fetchAllDataInBackground();
+
+            } catch (error) {
+                console.error("Initial data load error:", error);
+                loader.querySelector('p').innerText = `Error: Could not load initial data.`;
+            }
+        }
+        
+        async function fetchAllDataInBackground() {
+            console.log("Fetching remaining data in background...");
+            try {
                 const metals = ['gold', 'silver'];
                 const carats = ['22k', '21k', '18k', 'trad'];
                 const fetchPromises = [];
 
                 for (const metal of metals) {
-                    fetchPromises.push(
-                        fetch(`${API_BASE_URL}/api/prices/latest/${metal}`)
-                            .then(res => res.json())
-                            .then(data => { state.data[metal].latest = data; })
-                    );
+                    // We already have gold latest, so we can skip it
+                    if (metal !== 'gold') {
+                        fetchPromises.push(
+                            fetch(`${API_BASE_URL}/api/prices/latest/${metal}`).then(res => res.json()).then(data => { state.data[metal].latest = data; })
+                        );
+                    }
                     for (const carat of carats) {
+                        // We already have gold_22k history, so skip it
+                        if (metal === 'gold' && carat === '22k') continue;
+                        
                         const metalType = `${metal}_${carat}`;
                         fetchPromises.push(
-                            fetch(`${API_BASE_URL}/api/prices/history/${metalType}`)
-                                .then(res => res.json())
-                                .then(data => { state.data[metal].history[carat] = data; })
+                            fetch(`${API_BASE_URL}/api/prices/history/${metalType}`).then(res => res.json()).then(data => { state.data[metal].history[carat] = data; })
                         );
                     }
                 }
                 await Promise.all(fetchPromises);
-                updateUI();
-            } catch (error) {
-                console.error("Initial data load error:", error);
-                loader.querySelector('p').innerText = `Error: Could not load initial data.`;
-            } finally {
-                loader.style.display = 'none';
+                console.log("Background data fetch complete.");
+            } catch(error) {
+                console.error("Background data fetch error:", error);
             }
         }
 
@@ -222,8 +247,8 @@
                 }
 
                 row.innerHTML = `
-                    <td class="p-3">${carat.label}</td>
-                    <td class="p-3 text-right font-semibold">৳ ${Math.round(displayPrice).toLocaleString('en-IN')}</td>
+                    <td class="py-3 px-2">${carat.label}</td>
+                    <td class="py-3 px-2 text-right font-semibold">৳ ${Math.round(displayPrice).toLocaleString('en-IN')}</td>
                 `;
                 selectors.tableBody.appendChild(row);
             }
@@ -231,8 +256,17 @@
 
         function renderChart() {
             const historyData = state.data[state.metal]?.history[state.carat];
-            if (!historyData || historyData.length === 0) {
-                if (priceChart) priceChart.destroy();
+            
+            if (priceChart) {
+                priceChart.destroy();
+            }
+
+            if (historyData === undefined) {
+                graphTitle.textContent = "Loading Data...";
+                return;
+            }
+
+            if (historyData.length === 0) {
                 graphTitle.textContent = "No History Available";
                 return;
             };
@@ -253,8 +287,6 @@
             const chartLabel = `${metalName} ${caratLabel} (per ${state.unit})`;
             const borderColor = state.metal === 'gold' ? '#BC9F8B' : '#4C585B';
             const backgroundColor = state.metal === 'gold' ? 'rgba(188, 159, 139, 0.2)' : 'rgba(76, 88, 91, 0.2)';
-
-            if (priceChart) priceChart.destroy();
             
             priceChart = new Chart(ctx, {
                 type: 'line',
