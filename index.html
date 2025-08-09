@@ -21,7 +21,7 @@
         .page.active { display: block; }
         
         .tech-category-wrapper {
-            background-color: #E5E7EB;
+            background-color: #F3F4F6;
             padding: 1.5rem;
             border-radius: 0.75rem;
             border: 1px solid #d1d5db;
@@ -69,8 +69,11 @@
                         </table>
                     </div>
                 </div>
+                <!-- METAL DESCRIPTION -->
+                <div id="metal-description" class="text-center text-sm text-gray-600 my-4"></div>
+                <p class="text-center text-sm text-gray-600 mb-4">1 Vori = 11.664 Grams = 0.374 Troy Ounces</p>
                 <!-- GRAPH -->
-                <div>
+                <div class="mt-8">
                     <div class="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4">
                         <h2 id="graph-title" class="text-xl font-bold text-center sm:text-left">Price History</h2>
                         <select id="days-selector" class="border border-gray-300 rounded-md p-2 w-full sm:w-auto">
@@ -88,8 +91,6 @@
                         </div>
                     </div>
                 </div>
-                <hr class="w-3/4 mx-auto my-4 border-gray-200">
-                <p class="text-center text-sm text-gray-500">1 Vori = 11.664 Grams</p>
             </main>
         </div>
 
@@ -105,19 +106,19 @@
                 <div>
                     <h3 class="text-2xl font-bold mb-6 text-center">How to Use</h3>
                     <div class="grid md:grid-cols-2 gap-6 text-gray-700">
-                        <div class="bg-gray-50 p-6 rounded-lg space-y-2">
+                        <div class="bg-gray-100 p-6 rounded-lg space-y-2">
                             <h4 class="font-bold text-lg">Master Controls</h4>
                             <p>Use the <b>Gold/Silver</b> and <b>Per Gram/Per Vori</b> buttons at the top to set your primary view. The entire page, including colors, tables, and graphs, will instantly update to reflect your selection.</p>
                         </div>
-                         <div class="bg-gray-50 p-6 rounded-lg space-y-2">
+                         <div class="bg-gray-100 p-6 rounded-lg space-y-2">
                             <h4 class="font-bold text-lg">Interactive Price Table</h4>
                             <p>The table shows the latest prices for all available purities. To dive deeper, simply <b>click on any row</b> (e.g., "18 Karat"). This action will immediately update the history graph below to show the price trend for that specific carat.</p>
                         </div>
-                         <div class="bg-gray-50 p-6 rounded-lg space-y-2">
+                         <div class="bg-gray-100 p-6 rounded-lg space-y-2">
                             <h4 class="font-bold text-lg">Historical Graph</h4>
                             <p>The graph visualizes the price history for your selected carat. Use the <b>dropdown menu</b> above the graph to change the time period you want to analyze, from a week to six months.</p>
                         </div>
-                         <div class="bg-gray-50 p-6 rounded-lg space-y-2">
+                         <div class="bg-gray-100 p-6 rounded-lg space-y-2">
                             <h4 class="font-bold text-lg">Responsive Design</h4>
                             <p>This application is designed to work beautifully on any device. Whether you're on a desktop or a mobile phone, the layout will adapt to provide a clean and intuitive experience.</p>
                         </div>
@@ -208,6 +209,7 @@
             unit: document.getElementById('unit-selector'),
             days: document.getElementById('days-selector'),
             tableBody: document.getElementById('price-table-body'),
+            metalDescription: document.getElementById('metal-description'),
             pages: {
                 home: document.getElementById('home-page'),
                 about: document.getElementById('about-page')
@@ -355,6 +357,13 @@
             selectors.tableBody.innerHTML = '';
             const metalName = state.metal.charAt(0).toUpperCase() + state.metal.slice(1);
             tableTitle.textContent = `Latest ${metalName} Prices`;
+
+            // Update metal description
+            if (state.metal === 'gold') {
+                selectors.metalDescription.textContent = 'Description: Cadmium (Hallmarked Gold) includes 22K, 21K, and 18K.';
+            } else {
+                selectors.metalDescription.textContent = 'Description: Cadmium (Hallmarked) includes 22K, 21K, and 18K.';
+            }
 
             const carats = [
                 { key: '22k', label: '22 Karat' }, { key: '21k', label: '21 Karat' },
